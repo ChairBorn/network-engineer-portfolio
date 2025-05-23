@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Main Next.js application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      # Mount uploads directory for persistent file storage
+      - uploads:/app/uploads
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - devnet-network
+
+  # Redis for session storage and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - devnet-network
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=devnet
+      - POSTGRES_USER=devnet_user
+      - POSTGRES_PASSWORD=devnet_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - devnet-network
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+      - uploads:/var/www/uploads
+    depends_on:
+      - app
+    networks:
+      - devnet-network
+
+  # CDN/File storage service
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=devnet_admin
+      - MINIO_ROOT_PASSWORD=devnet_password123
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - devnet-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  uploads:
+
+networks:
+  devnet-network:
+    driver: bridge
